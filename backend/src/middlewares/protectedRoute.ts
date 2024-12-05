@@ -1,12 +1,16 @@
 import jwt from "jsonwebtoken";
 
-import { Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction, RequestHandler } from "express";
 
 interface decoded extends jwt.JwtPayload {
   userId: string;
 }
 
-const authCheck = (req: Request, res: Response, next: NextFunction) => {
+const authCheck: RequestHandler = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): any => {
   try {
     const token = req.cookies.token;
     if (!token) {

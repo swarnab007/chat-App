@@ -1,115 +1,146 @@
-import { Request, Response } from "express";
+import { Request, RequestHandler, Response } from "express";
 import prisma from "../db/prisma.js";
 import bcrypt from "bcryptjs";
 import generateToken from "../utils/generateToken.js";
 
-export const Register = async (req: Request, res: Response) => {
+// Register a new user
+export const Register: RequestHandler = async (req: Request, res: Response): Promise<any> => {
   try {
     const { fullname, email, username, password, confirmPassword, gender } =
       req.body;
 
+    // Validate input fields
     if (
+      !fullname ||
       !email ||
       !username ||
       !password ||
       !confirmPassword ||
-      !gender ||
-      !fullname
+      !gender
     ) {
-      return res.status(400).json({ message: "Please fill all fields" });
+      res.status(400).json({ message: "All fields are required" });
+      return;
     }
 
+    // Check if passwords match
     if (password !== confirmPassword) {
-      return res.status(400).json({ message: "Password does not match" });
+      res.status(400).json({ message: "Passwords do not match" });
+      return;
     }
 
-    const user = await prisma.user.findUnique({ where: { username } });
-
-    if (user) {
-      return res.status(400).json({ message: "Username already exists" });
+    // Check if the username already exists
+    const existingUser = await prisma.user.findUnique({ where: { username } });
+    if (existingUser) {
+      res.status(400).json({ message: "Username already exists" });
+      return;
     }
 
+    // Hash the password
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // https://avatar-placeholder.iran.liara.run/
-    const boyProfilePic = `https://avatar.iran.liara.run/public/boy?username=${username}`;
-    const girlProfilePic = `https://avatar.iran.liara.run/public/girl?username=${username}`;
+    // Set profile picture based on gender
+    const profilePic = gender === "male"
+      ? `https://avatar.iran.liara.run/public/boy?username=${username}`
+      : `https://avatar.iran.liara.run/public/girl?username=${username}`;
 
+    // Create the user
     const newUser = await prisma.user.create({
       data: {
-        username,
         fullname,
         email,
+        username,
         password: passwordHash,
         gender,
-        profilePic: gender === "male" ? boyProfilePic : girlProfilePic,
+        profilePic,
+      },
+      select: {
+        id: true,
+        fullname: true,
+        email: true,
+        username: true,
+        gender: true,
+        profilePic: true,
       },
     });
 
-    // generate token
+    // Generate authentication token
     generateToken(newUser.id, res);
 
-    return res.status(201).json(newUser);
+    // Respond with the created user
+    res.status(201).json(newUser);
   } catch (error: any) {
-    console.log(error.message);
-    res.status(500).json(error.message);
+    console.error("Error in registerUser:", error.message);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
-export const Login = async (req: Request, res: Response) => {
+// User login
+export const Login: RequestHandler = async (req: Request, res: Response): Promise<any> => {
   try {
     const { username, password } = req.body;
 
+    // Validate input fields
     if (!username || !password) {
-      return res.status(400).json({ message: "Please fill all fields" });
+      res.status(400).json({ message: "Username and password are required" });
+      return;
     }
 
+    // Check if the user exists
     const user = await prisma.user.findUnique({ where: { username } });
-
-    if (!user) {
-      return res.status(400).json({ message: "Invalid credentials" });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      res.status(400).json({ message: "Invalid username or password" });
+      return;
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
-      return res.status(400).json({ message: "Invalid credentials" });
-    }
-
-    // generate token
+    // Generate authentication token
     generateToken(user.id, res);
 
-    return res.status(200).json(user);
+    // Exclude the password field from the response
+    const { password: _, ...userWithoutPassword } = user;
+    res.status(200).json(userWithoutPassword);
   } catch (error: any) {
-    console.log(error.message);
-    res.status(500).json(error.message);
+    console.error("Error in loginUser:", error.message);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
-export const Logout = async (req: Request, res: Response) => {
+// User logout
+export const Logout: RequestHandler = async (req: Request, res: Response): Promise<void> => {
   try {
-    // clear cookie
     res.clearCookie("token");
-    return res.status(200).json({ message: "Logged out" });
+    res.status(200).json({ message: "Successfully logged out" });
   } catch (error: any) {
-    console.log(error.message);
-    res.status(500).json(error.message);
+    console.error("Error in logoutUser:", error.message);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
-export const getProflie = async (req: Request, res: Response) => {
+// Get user profile
+export const getProfile: RequestHandler = async (req: Request, res: Response): Promise<any> => {
   try {
+    const userId = req.body.userId;
+
+    // Fetch the user profile
     const user = await prisma.user.findUnique({
-      where: { id: req.body.userId },
+      where: { id: userId },
+      select: {
+        id: true,
+        fullname: true,
+        email: true,
+        username: true,
+        gender: true,
+        profilePic: true,
+      },
     });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      res.status(404).json({ message: "User not found" });
+      return;
     }
 
-    return res.status(200).json(user);
+    res.status(200).json(user);
   } catch (error: any) {
-    console.log(error.message);
-    res.status(500).json(error.message);
+    console.error("Error in getUserProfile:", error.message);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
